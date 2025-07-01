@@ -1,0 +1,258 @@
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sales Ops Feedback Tool</title>
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    .hidden { display: none; }
+    .green { background-color: #d4edda; }
+    .yellow { background-color: #fff3cd; }
+    .red { background-color: #f8d7da; }
+    .offline-banner { background: orange; color: white; padding: 5px; margin-bottom: 10px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 10px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Sales Ops Feedback Tool</h1>
+
+  <div id="roleSelect">
+    <button onclick="setRole('agent')">Agent</button>
+    <button onclick="setRole('lead')">Lead</button>
+  </div>
+
+  <div id="offlineBanner" class="offline-banner hidden">Offline Mode - Changes will sync when online</div>
+
+  <!-- AGENT SECTION -->
+  <div id="agentSection" class="hidden">
+    <h2>Submit Feedback</h2>
+    <form id="feedbackForm">
+      <input type="text" placeholder="Agent Name" id="agentName" required><br><br>
+      <input type="text" placeholder="Client Company" id="company" required><br><br>
+      <select id="department">
+        <option value="SaaS">SaaS</option>
+        <option value="Hardware">Hardware</option>
+        <option value="Consulting">Consulting</option>
+        <option value="Other">Other</option>
+      </select><br><br>
+      <input type="number" placeholder="Satisfaction Score (1-5)" id="score" required><br><br>
+      <input type="number" placeholder="NPS (-100 to +100)" id="nps"><br><br>
+      <textarea placeholder="Comment" id="comment"></textarea><br><br>
+      <button type="submit">Submit</button>
+    </form>
+  </div>
+
+  <!-- LEAD SECTION -->
+  <div id="leadSection" class="hidden">
+    <h2>Dashboard</h2>
+    <div>
+      <button onclick="syncNow()">Sync Now</button>
+      <input type="text" id="searchInput" placeholder="Search by Company or Agent">
+      <select id="filterDept">
+        <option value="">All Departments</option>
+        <option value="SaaS">SaaS</option>
+        <option value="Hardware">Hardware</option>
+        <option value="Consulting">Consulting</option>
+        <option value="Other">Other</option>
+      </select>
+      <select id="filterAgent"></select>
+    </div>
+    <div id="analytics"></div>
+    <table>
+      <thead>
+        <tr>
+          <th onclick="sortTable('agent')">Agent</th>
+          <th onclick="sortTable('company')">Company</th>
+          <th onclick="sortTable('department')">Dept</th>
+          <th onclick="sortTable('score')">Score</th>
+          <th onclick="sortTable('nps')">NPS</th>
+          <th>Comment</th>
+        </tr>
+      </thead>
+      <tbody id="feedbackTable"></tbody>
+    </table>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_AUTH_DOMAIN",
+      databaseURL: "YOUR_DB_URL",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_BUCKET",
+      messagingSenderId: "YOUR_MSID",
+      appId: "YOUR_APP_ID"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    let allData = [];
+    let sortKey = 'timestamp';
+    let sortDir = 'desc';
+
+    function setRole(role) {
+      localStorage.setItem('role', role);
+      renderRoleUI();
+    }
+
+    function renderRoleUI() {
+      const role = localStorage.getItem('role');
+      document.getElementById('roleSelect').classList.add('hidden');
+      document.getElementById('agentSection').classList.toggle('hidden', role !== 'agent');
+      document.getElementById('leadSection').classList.toggle('hidden', role !== 'lead');
+    }
+
+    // Agent Feedback Submit
+    document.getElementById('feedbackForm').addEventListener('submit', e => {
+      e.preventDefault();
+      const data = {
+        agent: agentName.value.trim(),
+        company: company.value.trim(),
+        department: department.value,
+        score: Number(score.value),
+        nps: Number(nps.value),
+        comment: comment.value.trim(),
+        timestamp: Date.now()
+      };
+
+      if (!data.agent || !data.company || !(data.score >= 1 && data.score <= 5)) return alert('Missing required fields');
+      if (data.nps < -100 || data.nps > 100) return alert('NPS out of range');
+
+      if (navigator.onLine) {
+        firebase.database().ref('feedbacks').push(data);
+      } else {
+        showOffline();
+        const local = JSON.parse(localStorage.getItem('offlineData') || '[]');
+        local.push(data);
+        localStorage.setItem('offlineData', JSON.stringify(local));
+      }
+
+      feedbackForm.reset();
+    });
+
+    function showOffline() {
+      document.getElementById('offlineBanner').classList.remove('hidden');
+    }
+
+    function syncNow() {
+      const local = JSON.parse(localStorage.getItem('offlineData') || '[]');
+      local.forEach(entry => firebase.database().ref('feedbacks').push(entry));
+      localStorage.removeItem('offlineData');
+      alert('Offline data synced!');
+    }
+
+    function listenToFirebase() {
+      firebase.database().ref('feedbacks').on('value', snapshot => {
+        const val = snapshot.val() || {};
+        allData = Object.values(val);
+        renderTable();
+        renderAnalytics();
+        populateAgentFilter();
+      });
+    }
+
+    function sortTable(key) {
+      sortDir = (sortKey === key && sortDir === 'asc') ? 'desc' : 'asc';
+      sortKey = key;
+      renderTable();
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('feedbackTable');
+      const filterDept = document.getElementById('filterDept').value;
+      const filterAgent = document.getElementById('filterAgent').value;
+      const query = document.getElementById('searchInput').value.toLowerCase();
+
+      let data = [...allData];
+      if (filterDept) data = data.filter(d => d.department === filterDept);
+      if (filterAgent) data = data.filter(d => d.agent === filterAgent);
+      if (query) data = data.filter(d => d.agent.toLowerCase().includes(query) || d.company.toLowerCase().includes(query));
+
+      data.sort((a, b) => sortDir === 'asc' ? a[sortKey] - b[sortKey] : b[sortKey] - a[sortKey]);
+
+      tbody.innerHTML = data.map(d => {
+        let cls = d.score >= 4 ? 'green' : (d.score >= 2 ? 'yellow' : 'red');
+        if (d.nps <= 0) cls = 'red';
+        return `<tr class="${cls}"><td>${d.agent}</td><td>${d.company}</td><td>${d.department}</td><td>${d.score}</td><td>${d.nps}</td><td>${d.comment}</td></tr>`;
+      }).join('');
+    }
+
+    function renderAnalytics() {
+      const total = allData.length;
+      const avgScore = (allData.reduce((acc, d) => acc + d.score, 0) / total || 0).toFixed(2);
+      const avgNps = (allData.reduce((acc, d) => acc + d.nps, 0) / total || 0).toFixed(2);
+
+      const deptAvg = allData.reduce((acc, d) => {
+        acc[d.department] = acc[d.department] || [];
+        acc[d.department].push(d.score);
+        return acc;
+      }, {});
+
+      let topDept = '';
+      let topScore = 0;
+      for (let dept in deptAvg) {
+        const avg = deptAvg[dept].reduce((a, b) => a + b) / deptAvg[dept].length;
+        if (avg > topScore) {
+          topScore = avg;
+          topDept = dept;
+        }
+      }
+
+      const agentNps = allData.reduce((acc, d) => {
+        acc[d.agent] = acc[d.agent] || [];
+        acc[d.agent].push(d.nps);
+        return acc;
+      }, {});
+
+      const topAgents = Object.entries(agentNps).sort((a, b) => {
+        const avgA = a[1].reduce((x, y) => x + y) / a[1].length;
+        const avgB = b[1].reduce((x, y) => x + y) / b[1].length;
+        return avgB - avgA;
+      }).map(([k]) => k);
+
+      const lowAgents = Object.entries(
+        allData.filter(d => d.score < 3)
+               .reduce((acc, d) => {
+                 acc[d.agent] = (acc[d.agent] || 0) + 1;
+                 return acc;
+               }, {})
+      ).filter(([_, v]) => v >= 3).map(([k]) => k);
+
+      document.getElementById('analytics').innerHTML = `
+        <p>Total Feedback: ${total}</p>
+        <p>Average Score: ${avgScore}</p>
+        <p>Average NPS: ${avgNps}</p>
+        <p>Top Dept: ${topDept} (${topScore.toFixed(2)})</p>
+        <p>Top Agent(s): ${topAgents.slice(0, 3).join(', ')}</p>
+        <p>Agents with ≥3 Low Scores: ${lowAgents.join(', ') || 'None'}</p>
+      `;
+    }
+
+    function populateAgentFilter() {
+      const agents = [...new Set(allData.map(d => d.agent))];
+      filterAgent.innerHTML = '<option value="">All Agents</option>' + agents.map(a => `<option value="${a}">${a}</option>`).join('');
+    }
+
+    document.getElementById('searchInput').addEventListener('input', debounce(renderTable, 300));
+
+    function debounce(func, delay) {
+      let timer;
+      return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => func.apply(this, args), delay);
+      };
+    }
+
+    window.addEventListener('load', () => {
+      if (localStorage.getItem('role')) {
+        renderRoleUI();
+        if (localStorage.getItem('role') === 'lead') listenToFirebase();
+      }
+    });
+  </script>
+</body>
+</html>
