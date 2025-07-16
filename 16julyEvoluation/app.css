@@ -1,0 +1,26 @@
+body {
+    font-family: sans-serif;
+    max-width: 600px;
+    margin: 20px auto;
+}
+
+input,
+select {
+    margin-right: 5px;
+}
+
+.item {
+    display: flex;
+    justify-content: space-between;
+}
+
+.toast {
+    background: orange;
+    padding: 5px;
+    margin-top: 10px;
+    display: none;
+}
+
+.filters button {
+    margin-right: 5px;
+}

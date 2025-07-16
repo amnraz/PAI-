@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Grocery List</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+</head>
+<body>
+
+<h2>Grocery List</h2>
+<form id="itemForm">
+  <input id="name" placeholder="Item" required>
+  <input id="qty" type="number" min="1" value="1" required>
+  <input id="price" type="number" min="0" step="0.01" placeholder="₹" required>
+  <select id="category">
+    <option value="Dairy">Dairy</option>
+    <option value="Produce">Produce</option>
+    <option value="Snacks">Snacks</option>
+  </select>
+  <button>Add</button>
+</form>
+
+<div class="filters">
+  <button onclick="filterCategory('All')">All</button>
+  <button onclick="filterCategory('Dairy')">Dairy</button>
+  <button onclick="filterCategory('Produce')">Produce</button>
+  <button onclick="filterCategory('Snacks')">Snacks</button>
+</div>
+
+<p id="summary"></p>
+<ul id="list"></ul>
+<div class="toast" id="undoToast">Item deleted. <button onclick="undoDelete()">Undo</button></div>
+
+<script src="app.js"></script>
+</body>
+</html>
